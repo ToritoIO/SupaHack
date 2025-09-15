@@ -2,6 +2,10 @@
 
 A Streamlit web app for exploring and testing exposed Supabase databases through the PostgREST API.
 
+## Online Demo
+
+https://supahack.streamlit.app
+
 ## Features
 
 - **Connect** to any Supabase project using Project ID and API key
