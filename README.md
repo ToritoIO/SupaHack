@@ -36,6 +36,29 @@ streamlit run supahack.py
 3. **Query**: Use filters, sorting, and pagination to find specific data
 4. **Write**: Switch to the "Write Data" tab for INSERT/UPDATE/DELETE operations
 
+## Chrome Side Panel Extension
+
+The repository now also ships with a Chrome extension (Manifest V3) located in `chrome_extension/`. It mirrors the Streamlit experience inside the browser side panel.
+
+### Load the extension
+
+1. Open `chrome://extensions` in Google Chrome.
+2. Enable **Developer mode**.
+3. Click **Load unpacked** and choose the `chrome_extension` folder.
+4. Click the SupaHack puzzle-piece icon in your toolbar to open the side panel.
+
+### Extension workflow
+
+- Fill in your Supabase **Project ID**, **schema**, and **apiKey** (optionally a separate Bearer token).
+- Click **Connect / Refresh** to retrieve the OpenAPI spec and table list; credentials are stored in `chrome.storage.local`.
+- Select a table and press **Explore data** to open the 90% width/height modal explorer.
+- Use the theme chooser in the header to flip between dark and light UI styles.
+- Use the **Browse** tab for filtering, ordering, and pagination. The **Insert**, **Update**, and **Delete** tabs expose the corresponding PostgREST operations.
+
+When you press **Explore data**, the extension injects a modal overlay on top of the current page instead of rendering inside the side panel, giving a full-width workspace while keeping the browser tab context.
+
+> ⚠️ Just like the Streamlit app, avoid shipping `service_role` keys to untrusted environments.
+
 ## Configuration
 
 - **Project ID**: Found in your Supabase project URL (`https://PROJECT_ID.supabase.co`)
