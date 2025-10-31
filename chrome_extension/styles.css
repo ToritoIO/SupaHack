@@ -316,6 +316,49 @@ button:hover:not(:disabled) {
   margin-bottom: 12px;
 }
 
+.captured-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.captured-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.captured-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+
+.captured-label {
+  color: var(--muted-text);
+}
+
+.captured-value {
+  font-family: "JetBrains Mono", "Fira Mono", "SFMono-Regular", monospace;
+  word-break: break-all;
+  text-align: right;
+}
+
+.captured-empty {
+  color: var(--muted-text);
+  font-size: 0.85rem;
+}
+
+body[data-theme="light"] .captured-summary {
+  background: rgba(241, 245, 249, 0.9);
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
 .tables-container {
   display: flex;
   flex-direction: column;
@@ -566,6 +609,7 @@ body[data-theme="light"] .tab-btn.active {
   text-align: left;
   font-size: 0.9rem;
   word-wrap: break-word;
+  vertical-align: top;
 }
 
 .results th {

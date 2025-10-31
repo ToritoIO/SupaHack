@@ -1,3 +1,5 @@
+const CAPTURED_REQUEST_KEY = "supahack_capturedRequest";
+
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -69,5 +71,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
     });
+    return;
+  }
+
+  if (message?.type === "SUPAHACK_CAPTURED_REQUEST" && message?.payload) {
+    const payload = {
+      ...message.payload,
+      capturedAt: Date.now(),
+    };
+    chrome.storage.local.set({ [CAPTURED_REQUEST_KEY]: payload }, () => {
+      if (chrome.runtime.lastError) {
+        sendResponse?.({ ok: false, reason: chrome.runtime.lastError.message });
+        return;
+      }
+      sendResponse?.({ ok: true });
+    });
+    return true;
   }
 });
