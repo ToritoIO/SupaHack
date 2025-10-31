@@ -16,6 +16,7 @@ const state = {
   openApi: null,
   tables: [],
   tableCounts: {},
+  tableCountErrors: {},
   currentTable: null,
   theme: "dark",
   connectionWriteSource: null,
@@ -211,12 +212,21 @@ function renderTablesList() {
 
     const countCell = document.createElement("td");
     const count = state.tableCounts?.[table];
+    const error = state.tableCountErrors?.[table];
     if (typeof count === "number") {
       countCell.textContent = count.toLocaleString();
     } else if (count === null) {
       countCell.textContent = "—";
     } else {
       countCell.textContent = "…";
+    }
+    if (error) {
+      countCell.textContent = "⚠";
+      countCell.title = error.message || "Unable to fetch row count.";
+      row.classList.add("has-error");
+    } else {
+      countCell.title = "";
+      row.classList.remove("has-error");
     }
 
     row.appendChild(nameCell);
@@ -276,14 +286,17 @@ async function connectWithConnection(connection, { triggeredBy = "user" } = {}) 
   const previousTable = state.currentTable;
   state.tables = [];
   state.tableCounts = {};
+  state.tableCountErrors = {};
   state.currentTable = null;
   renderTablesList();
 
   const statusPrefix = triggeredBy === "devtools"
     ? "DevTools connection"
-    : triggeredBy === "restore"
-      ? "Restoring connection"
-      : "Connecting";
+    : triggeredBy === "detector"
+      ? "Detected Supabase request"
+      : triggeredBy === "restore"
+        ? "Restoring connection"
+        : "Connecting";
   setStatus(`${statusPrefix}…`, "progress");
   dom.connectBtn.disabled = true;
   dom.reloadBtn.disabled = true;
@@ -335,18 +348,31 @@ async function refreshTableCounts() {
   if (!state.tables.length) return;
   setStatus("Counting rows…", "progress");
 
+  state.tableCounts = {};
+  state.tableCountErrors = {};
+
   for (const table of state.tables) {
     try {
       const count = await getTableRowCount(table);
       state.tableCounts[table] = typeof count === "number" ? count : null;
     } catch (error) {
-      console.warn(`Failed to count rows for ${table}`, error);
+      const message = error instanceof Error ? error.message : String(error || "Row count failed.");
+      const suppressLog = /401/.test(message) || /permission denied/i.test(message);
+      if (!suppressLog) {
+        console.warn(`Failed to count rows for ${table}`, error);
+      }
       state.tableCounts[table] = null;
+      state.tableCountErrors[table] = { message };
     }
     renderTablesList();
   }
 
-  setStatus("Row counts updated.", "success");
+  const erroredTables = Object.keys(state.tableCountErrors || {});
+  if (erroredTables.length) {
+    setStatus("Row counts loaded with permission warnings.", "error");
+  } else {
+    setStatus("Row counts updated.", "success");
+  }
 }
 
 async function openTableExplorer(table) {
@@ -394,6 +420,7 @@ async function restoreFromStorage() {
 
     const tableStored = await storageGet(storageKeys.selectedTable);
     state.currentTable = tableStored?.[storageKeys.selectedTable] || null;
+    state.tableCountErrors = {};
     renderTablesList();
 
     const themeStored = await storageGet(storageKeys.theme);
@@ -406,16 +433,19 @@ async function restoreFromStorage() {
 
     const metaStored = await storageGet(storageKeys.connectionMeta);
     const meta = metaStored?.[storageKeys.connectionMeta];
+    const autoConnectSource = typeof meta?.source === "string" && ["devtools", "detector"].includes(meta.source)
+      ? meta.source
+      : null;
     const autoConnect = Boolean(
       saved?.projectId &&
       saved?.apiKey &&
-      meta?.source === "devtools" &&
+      autoConnectSource &&
       typeof meta?.updatedAt === "number" &&
       Date.now() - meta.updatedAt < 30000
     );
 
-    if (autoConnect) {
-      await connectWithConnection(saved, { triggeredBy: "devtools" });
+    if (autoConnect && autoConnectSource) {
+      await connectWithConnection(saved, { triggeredBy: autoConnectSource });
     } else if (saved?.projectId && saved?.apiKey) {
       setStatus("Restored credentials. Click Connect to refresh tables.", "idle");
     } else {
@@ -435,6 +465,7 @@ async function clearSavedConnection() {
   applyConnectionToForm(null, { announce: false });
   state.tables = [];
   state.tableCounts = {};
+  state.tableCountErrors = {};
   state.currentTable = null;
 
   renderTablesList();
@@ -471,8 +502,10 @@ async function init() {
     }
     if (changes[storageKeys.connection]) {
       const change = changes[storageKeys.connection];
+      const metaChange = changes[storageKeys.connectionMeta];
       const announce = state.connectionWriteSource !== "sidepanel";
       const newConnection = change.newValue || null;
+      const source = metaChange?.newValue?.source;
       applyConnectionToForm(newConnection, { announce });
       if (announce) {
         state.tables = [];
@@ -480,7 +513,8 @@ async function init() {
         state.currentTable = null;
         renderTablesList();
         if (newConnection?.projectId && newConnection?.apiKey) {
-          connectWithConnection(newConnection, { triggeredBy: "devtools" });
+          const triggeredBy = source === "detector" ? "detector" : source === "devtools" ? "devtools" : "storage";
+          connectWithConnection(newConnection, { triggeredBy });
         }
       }
       state.connectionWriteSource = null;

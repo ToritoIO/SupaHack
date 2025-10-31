@@ -372,6 +372,11 @@ button:hover:not(:disabled) {
   color: #fff;
 }
 
+.tables-grid tbody tr.has-error td:last-child {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .tables-grid tbody tr.tables-empty {
   cursor: default;
   text-align: center;

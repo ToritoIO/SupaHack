@@ -269,7 +269,7 @@ async function openSidePanel() {
   }
 
   try {
-    const response = await sendMessageAsync({ type: "SUPAHACK_OPEN_SIDE_PANEL", tabId });
+    const response = await sendMessageAsync({ type: "SUPAEXPLORER_OPEN_SIDE_PANEL", tabId });
     if (!response?.ok) {
       throw new Error(response?.reason || "Side panel did not open.");
     }
