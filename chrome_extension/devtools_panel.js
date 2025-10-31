@@ -6,10 +6,13 @@ const dom = {
   list: document.getElementById("request-list"),
   clearBtn: document.getElementById("clear-btn"),
   template: document.getElementById("request-template"),
+  openSidePanelBtn: document.getElementById("open-sidepanel-btn"),
+  authFilterCheckbox: document.getElementById("auth-filter-checkbox"),
 };
 
 const state = {
   requests: [],
+  showOnlyAuth: true,
 };
 
 function generateId() {
@@ -39,6 +42,9 @@ function normalizeHeaders(headers) {
 
 function createEntry(request) {
   const { list, map } = normalizeHeaders(request.request?.headers);
+  const hasAuthHeaders = list.some((header) =>
+    INTERESTING_HEADERS.includes((header.name || "").toLowerCase())
+  );
   return {
     id: request._requestId || request.requestId || generateId(),
     method: request.request?.method || "GET",
@@ -52,6 +58,34 @@ function createEntry(request) {
     headerMap: map,
     requestId: request._requestId || request.requestId || null,
     tabId: chrome.devtools.inspectedWindow.tabId,
+    hasAuthHeaders,
+  };
+}
+
+function extractProjectId(url) {
+  try {
+    const { hostname } = new URL(url);
+    return hostname.split(".")[0] || "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function deriveConnectionPayload(entry) {
+  const headers = entry.headerMap || {};
+  const projectId = extractProjectId(entry.url || "");
+  const rawAuthorization = headers["authorization"] || "";
+  const bearer = rawAuthorization.toLowerCase().startsWith("bearer ")
+    ? rawAuthorization.slice(7)
+    : rawAuthorization || headers["apikey"] || headers["api-key"] || headers["x-apikey"] || "";
+  const apiKey = headers["apikey"] || headers["api-key"] || headers["x-apikey"] || "";
+  const schema = headers["accept-profile"] || "public";
+
+  return {
+    projectId,
+    schema,
+    apiKey,
+    bearer,
   };
 }
 
@@ -73,9 +107,26 @@ function renderRequests() {
     return;
   }
 
-  setStatus(`${state.requests.length} request${state.requests.length === 1 ? "" : "s"} captured for this DevTools session.`);
+  const visible = state.requests.filter((entry) => !state.showOnlyAuth || entry.hasAuthHeaders);
 
-  state.requests.forEach((entry) => {
+  if (!visible.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No requests match the current filter.";
+    dom.list.appendChild(empty);
+    setStatus("No requests match the current filter. Disable “Only auth headers” to see all traffic.");
+    return;
+  }
+
+  const descriptor = visible.length === 1 ? "request" : "requests";
+  const totalDescriptor = state.requests.length === 1 ? "request" : "requests";
+  if (state.showOnlyAuth) {
+    setStatus(`${visible.length} auth ${descriptor} shown (${state.requests.length} ${totalDescriptor} captured this session).`);
+  } else {
+    setStatus(`${visible.length} ${descriptor} captured this session.`);
+  }
+
+  visible.forEach((entry) => {
     const fragment = dom.template.content.cloneNode(true);
     const card = fragment.querySelector(".request-card");
     const methodEl = fragment.querySelector(".request-method");
@@ -122,35 +173,38 @@ function renderRequests() {
   });
 }
 
-function sendEntry(entry, card) {
-  const payload = {
-    url: entry.url,
-    method: entry.method,
-    status: entry.status,
-    statusText: entry.statusText,
-    headers: entry.headers,
-    headerMap: entry.headerMap,
-    initiator: entry.initiator,
-    tabId: entry.tabId,
-    requestId: entry.requestId,
-  };
+async function sendEntry(entry, card) {
+  if (card.classList.contains("sending")) {
+    return;
+  }
+
+  const connectionPayload = deriveConnectionPayload(entry);
+  if (!connectionPayload.projectId) {
+    setStatus("Unable to detect Supabase project id from this request.");
+    return;
+  }
+  if (!connectionPayload.apiKey && !connectionPayload.bearer) {
+    setStatus("No apiKey or bearer token found in this request.");
+    return;
+  }
 
   card.classList.add("sending");
-  setStatus("Sending captured request to SupaHack…");
+  setStatus("Sending connection details to SupaExplorer…");
 
-  chrome.runtime.sendMessage({ type: "SUPAHACK_CAPTURED_REQUEST", payload }, (response) => {
-    card.classList.remove("sending");
-    const lastError = chrome.runtime.lastError;
-    if (lastError) {
-      setStatus(`Failed to send: ${lastError.message}`);
-      return;
-    }
+  try {
+    const response = await sendMessageAsync({ type: "SUPAHACK_APPLY_CONNECTION", payload: connectionPayload });
     if (!response?.ok) {
-      setStatus(`Extension rejected request: ${response?.reason || "Unknown error"}`);
-      return;
+      throw new Error(response?.reason || "Extension rejected the connection payload.");
     }
-    setStatus("Request sent. Check the SupaHack side panel.");
-  });
+  } catch (error) {
+    card.classList.remove("sending");
+    setStatus(error?.message ? `Failed to send credentials: ${error.message}` : "Failed to send credentials.");
+    return;
+  }
+
+  card.classList.remove("sending");
+  setStatus("Connection sent. Opening SupaExplorer side panel…");
+  openSidePanel();
 }
 
 function handleRequestFinished(request) {
@@ -170,5 +224,79 @@ dom.clearBtn.addEventListener("click", () => {
   renderRequests();
 });
 
+if (dom.openSidePanelBtn) {
+  dom.openSidePanelBtn.addEventListener("click", () => {
+    openSidePanel();
+  });
+}
+
+if (dom.authFilterCheckbox) {
+  state.showOnlyAuth = Boolean(dom.authFilterCheckbox.checked);
+  dom.authFilterCheckbox.addEventListener("change", () => {
+    state.showOnlyAuth = Boolean(dom.authFilterCheckbox.checked);
+    renderRequests();
+  });
+}
+
 renderRequests();
 chrome.devtools.network.onRequestFinished.addListener(handleRequestFinished);
+
+async function openSidePanel() {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  if (!tabId) {
+    setStatus("Cannot determine inspected tab. Open the side panel manually.");
+    return;
+  }
+
+  setStatus("Opening SupaExplorer side panel…");
+
+  if (chrome?.sidePanel?.open) {
+    try {
+      if (typeof chrome.sidePanel.setOptions === "function") {
+        await chrome.sidePanel.setOptions({ tabId, path: "sidepanel.html" });
+      }
+      await chrome.sidePanel.open({ tabId });
+      setStatus("SupaExplorer side panel opened.");
+      return;
+    } catch (error) {
+      console.warn("Direct side panel open from DevTools failed", error);
+      if (!isUserGestureError(error)) {
+        setStatus(error?.message ? `Side panel error: ${error.message}` : "Side panel error.");
+        return;
+      }
+      // Fall through to message-based attempt for user-gesture errors.
+    }
+  }
+
+  try {
+    const response = await sendMessageAsync({ type: "SUPAHACK_OPEN_SIDE_PANEL", tabId });
+    if (!response?.ok) {
+      throw new Error(response?.reason || "Side panel did not open.");
+    }
+    setStatus("SupaExplorer side panel opened.");
+  } catch (error) {
+    if (isUserGestureError(error)) {
+      setStatus("Chrome blocked the side panel because it wasn't triggered directly. Click again or open it via the toolbar icon.");
+      return;
+    }
+    setStatus(error?.message ? `Side panel error: ${error.message}` : "Failed to open side panel.");
+  }
+}
+
+function sendMessageAsync(payload) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(payload, (response) => {
+      const lastError = chrome.runtime.lastError;
+      if (lastError) {
+        reject(new Error(lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+function isUserGestureError(error) {
+  const message = error?.message || "";
+  return /user gesture/i.test(message);
+}

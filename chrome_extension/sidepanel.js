@@ -2,7 +2,6 @@ const storageKeys = {
   connection: "supahack_connection",
   selectedTable: "supahack_currentTable",
   theme: "supahack_theme",
-  capturedRequest: "supahack_capturedRequest",
 };
 
 const state = {
@@ -18,7 +17,7 @@ const state = {
   tableCounts: {},
   currentTable: null,
   theme: "dark",
-  capturedRequest: null,
+  connectionWriteSource: null,
 };
 
 const dom = {
@@ -37,10 +36,6 @@ const dom = {
   connectionStatus: document.getElementById("connection-status"),
   themeToggle: document.getElementById("theme-toggle"),
   themeIcon: document.querySelector(".theme-icon"),
-  capturedCard: document.getElementById("captured-card"),
-  capturedSummary: document.getElementById("captured-summary"),
-  applyCapturedBtn: document.getElementById("apply-captured-btn"),
-  clearCapturedBtn: document.getElementById("clear-captured-btn"),
 };
 
 function sanitize(value) {
@@ -57,26 +52,47 @@ function setStatus(message, type = "idle") {
   else el.classList.add("status-idle");
 }
 
-function extractProjectId(url) {
-  try {
-    const { hostname } = new URL(url);
-    const segments = hostname.split(".");
-    return segments.length ? segments[0] : "";
-  } catch (error) {
-    return "";
+function applyConnectionToForm(connection, { announce = false } = {}) {
+  const normalized = connection
+    ? {
+        projectId: sanitize(connection.projectId),
+        schema: sanitize(connection.schema) || "public",
+        apiKey: sanitize(connection.apiKey),
+        bearer: sanitize(connection.bearer) || sanitize(connection.apiKey),
+      }
+    : {
+        projectId: "",
+        schema: "public",
+        apiKey: "",
+        bearer: "",
+      };
+
+  state.connection = normalized;
+  state.baseUrl = normalized.projectId ? buildBaseUrl(normalized.projectId) : "";
+
+  if (dom.projectId) dom.projectId.value = normalized.projectId;
+  if (dom.schema) dom.schema.value = normalized.schema || "public";
+  if (dom.apiKey) dom.apiKey.value = normalized.apiKey;
+  if (dom.bearer) dom.bearer.value = normalized.bearer;
+
+  if (announce) {
+    if (normalized.projectId || normalized.apiKey || normalized.bearer) {
+      setStatus("Connection details received from DevTools. Review and click Connect.", "success");
+    } else {
+      setStatus("Connection details cleared.", "idle");
+    }
   }
 }
 
-function normalizeCapturedHeaders(headers = []) {
-  const map = {};
-  headers.forEach((header) => {
-    if (!header || !header.name) return;
-    const key = header.name.toLowerCase();
-    if (typeof header.value === "string") {
-      map[key] = header.value;
-    }
-  });
-  return map;
+function markConnectionWriteSource(source) {
+  state.connectionWriteSource = source;
+  if (source) {
+    setTimeout(() => {
+      if (state.connectionWriteSource === source) {
+        state.connectionWriteSource = null;
+      }
+    }, 500);
+  }
 }
 
 function buildBaseUrl(projectId) {
@@ -215,8 +231,7 @@ async function handleConnect(event) {
   }
 
   connection.bearer = connection.bearer || connection.apiKey;
-  state.connection = connection;
-  state.baseUrl = buildBaseUrl(connection.projectId);
+  applyConnectionToForm(connection, { announce: false });
 
   setStatus("Connecting…", "progress");
   dom.connectBtn.disabled = true;
@@ -226,6 +241,7 @@ async function handleConnect(event) {
     state.openApi = await fetchOpenApi();
     state.tables = parseTablesFromOpenApi(state.openApi);
     state.tableCounts = {};
+    markConnectionWriteSource("sidepanel");
     await storageSet({ [storageKeys.connection]: state.connection });
     renderTablesList();
     setStatus(`Connected (${state.tables.length} tables)`, "success");
@@ -273,77 +289,6 @@ async function handleLoadCount() {
   }
 }
 
-function updateCapturedRequest(captured, { silent = false } = {}) {
-  if (!dom.capturedSummary) return;
-
-  state.capturedRequest = captured || null;
-  const summaryEl = dom.capturedSummary;
-  summaryEl.innerHTML = "";
-
-  const disabled = !captured;
-  if (dom.applyCapturedBtn) dom.applyCapturedBtn.disabled = disabled;
-  if (dom.clearCapturedBtn) dom.clearCapturedBtn.disabled = disabled;
-
-  if (!captured) {
-    const empty = document.createElement("div");
-    empty.className = "captured-empty";
-    empty.textContent = "No Supabase request captured yet. Use the DevTools panel to send one.";
-    summaryEl.appendChild(empty);
-    if (!silent) {
-      setStatus("Waiting for captured request from DevTools.", "idle");
-    }
-    return;
-  }
-
-  const map = captured.headerMap || normalizeCapturedHeaders(captured.headers);
-  const pairs = [
-    ["URL", captured.url || "Unknown"],
-    ["Method", captured.method || "GET"],
-  ];
-
-  if (captured.status) {
-    pairs.push(["Status", `${captured.status}${captured.statusText ? ` ${captured.statusText}` : ""}`]);
-  }
-
-  const projectId = extractProjectId(captured.url || "");
-  if (projectId) {
-    pairs.push(["Detected Project", projectId]);
-  }
-
-  if (map["apikey"]) {
-    pairs.push(["apiKey header", map["apikey"]]);
-  }
-
-  if (map["authorization"]) {
-    pairs.push(["Authorization", map["authorization"]]);
-  }
-
-  if (map["accept-profile"]) {
-    pairs.push(["Accept-Profile", map["accept-profile"]]);
-  }
-
-  pairs.forEach(([label, value]) => {
-    const row = document.createElement("div");
-    row.className = "captured-row";
-
-    const labelEl = document.createElement("span");
-    labelEl.className = "captured-label";
-    labelEl.textContent = label;
-
-    const valueEl = document.createElement("span");
-    valueEl.className = "captured-value";
-    valueEl.textContent = value;
-
-    row.appendChild(labelEl);
-    row.appendChild(valueEl);
-    summaryEl.appendChild(row);
-  });
-
-  if (!silent) {
-    setStatus("Captured headers ready. Click Apply to fill the form.", "success");
-  }
-}
-
 async function handleExplore() {
   if (!state.currentTable) {
     setStatus("Select a table first.", "error");
@@ -378,30 +323,15 @@ async function handleExplore() {
 
 async function restoreFromStorage() {
   try {
-    const capturedStored = await storageGet(storageKeys.capturedRequest);
-    updateCapturedRequest(capturedStored?.[storageKeys.capturedRequest] || null, { silent: true });
+    chrome.storage.local.remove("supahack_capturedRequest");
 
     const stored = await storageGet(storageKeys.connection);
     const saved = stored?.[storageKeys.connection];
-    if (!saved) {
-      setStatus("Idle", "idle");
-      return;
-    }
-
-    state.connection = {
-      projectId: saved.projectId || "",
-      schema: saved.schema || "public",
-      apiKey: saved.apiKey || "",
-      bearer: saved.bearer || saved.apiKey || "",
-    };
-    dom.projectId.value = state.connection.projectId;
-    dom.schema.value = state.connection.schema;
-    dom.apiKey.value = state.connection.apiKey;
-    dom.bearer.value = state.connection.bearer;
-
-    if (state.connection.projectId && state.connection.apiKey) {
-      state.baseUrl = buildBaseUrl(state.connection.projectId);
+    applyConnectionToForm(saved || null, { announce: false });
+    if (saved?.projectId && saved?.apiKey) {
       setStatus("Restored credentials. Click Connect to refresh tables.", "idle");
+    } else {
+      setStatus("Idle", "idle");
     }
 
     const tableStored = await storageGet(storageKeys.selectedTable);
@@ -421,24 +351,15 @@ async function restoreFromStorage() {
 }
 
 async function clearSavedConnection() {
+  markConnectionWriteSource("sidepanel");
   await storageRemove(storageKeys.connection);
   await storageRemove(storageKeys.selectedTable);
 
-  state.connection = {
-    projectId: "",
-    schema: "public",
-    apiKey: "",
-    bearer: "",
-  };
-  state.baseUrl = "";
+  applyConnectionToForm(null, { announce: false });
   state.tables = [];
   state.tableCounts = {};
   state.currentTable = null;
 
-  dom.projectId.value = "";
-  dom.schema.value = "public";
-  dom.apiKey.value = "";
-  dom.bearer.value = "";
   renderTablesList();
   setStatus("Cleared saved credentials.", "success");
 }
@@ -456,12 +377,6 @@ function initEventListeners() {
       setTheme(next);
     });
   }
-  if (dom.applyCapturedBtn) {
-    dom.applyCapturedBtn.addEventListener("click", applyCapturedRequest);
-  }
-  if (dom.clearCapturedBtn) {
-    dom.clearCapturedBtn.addEventListener("click", clearCapturedRequest);
-  }
 }
 
 async function init() {
@@ -477,60 +392,22 @@ async function init() {
     if (changes[storageKeys.theme]) {
       setTheme(changes[storageKeys.theme].newValue, { persist: false });
     }
-    if (changes[storageKeys.capturedRequest]) {
-      const change = changes[storageKeys.capturedRequest];
-      const isRemoval = typeof change.newValue === "undefined";
-      updateCapturedRequest(change.newValue || null, { silent: isRemoval });
+    if (changes[storageKeys.connection]) {
+      const change = changes[storageKeys.connection];
+      const announce = state.connectionWriteSource !== "sidepanel";
+      applyConnectionToForm(change.newValue || null, { announce });
+      if (announce) {
+        state.tables = [];
+        state.tableCounts = {};
+        state.currentTable = null;
+        renderTablesList();
+      }
+      state.connectionWriteSource = null;
     }
   });
 }
 
 init();
-async function applyCapturedRequest() {
-  const captured = state.capturedRequest;
-  if (!captured) {
-    setStatus("No captured request found.", "error");
-    return;
-  }
-
-  const headers = captured.headerMap || normalizeCapturedHeaders(captured.headers);
-  const projectId = extractProjectId(captured.url || "");
-  const apiKey = headers["apikey"] || headers["api-key"] || "";
-  const authorization = headers["authorization"] || "";
-  const bearer = authorization.toLowerCase().startsWith("bearer ")
-    ? authorization.slice(7)
-    : authorization;
-  const schemaHeader = headers["accept-profile"] || "";
-
-  if (projectId) {
-    dom.projectId.value = projectId;
-  }
-  if (schemaHeader) {
-    dom.schema.value = schemaHeader;
-  }
-  if (apiKey) {
-    dom.apiKey.value = apiKey;
-  }
-  if (bearer) {
-    dom.bearer.value = bearer;
-  }
-
-  setStatus("Captured values applied. Review and click Connect.", "success");
-  await clearCapturedRequestInternal({ silent: true });
-}
-
-async function clearCapturedRequest() {
-  await clearCapturedRequestInternal({ silent: false });
-}
-
-async function clearCapturedRequestInternal({ silent = false } = {}) {
-  await storageRemove(storageKeys.capturedRequest);
-  updateCapturedRequest(null, { silent });
-  if (!silent) {
-    setStatus("Cleared captured request.", "idle");
-  }
-}
-
 function setTheme(theme, { persist = true } = {}) {
   const nextTheme = theme === "light" ? "light" : "dark";
   state.theme = nextTheme;

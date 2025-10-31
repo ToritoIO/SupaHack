@@ -1,4 +1,4 @@
-const CAPTURED_REQUEST_KEY = "supahack_capturedRequest";
+const CONNECTION_STORAGE_KEY = "supahack_connection";
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
@@ -74,18 +74,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  if (message?.type === "SUPAHACK_CAPTURED_REQUEST" && message?.payload) {
+  if (message?.type === "SUPAHACK_APPLY_CONNECTION" && message?.payload) {
     const payload = {
-      ...message.payload,
-      capturedAt: Date.now(),
+      projectId: message.payload.projectId || "",
+      schema: message.payload.schema || "public",
+      apiKey: message.payload.apiKey || "",
+      bearer: message.payload.bearer || message.payload.apiKey || "",
     };
-    chrome.storage.local.set({ [CAPTURED_REQUEST_KEY]: payload }, () => {
+
+    chrome.storage.local.set({ [CONNECTION_STORAGE_KEY]: payload }, () => {
       if (chrome.runtime.lastError) {
         sendResponse?.({ ok: false, reason: chrome.runtime.lastError.message });
         return;
       }
       sendResponse?.({ ok: true });
     });
+    return true;
+  }
+
+  if (message?.type === "SUPAHACK_OPEN_SIDE_PANEL") {
+    const targetTabId = message.tabId ?? sender?.tab?.id;
+    if (!targetTabId) {
+      sendResponse?.({ ok: false, reason: "No tabId provided for side panel request." });
+      return;
+    }
+
+    (async () => {
+      try {
+        await chrome.sidePanel.setOptions({ tabId: targetTabId, path: "sidepanel.html" });
+        await chrome.sidePanel.open({ tabId: targetTabId });
+        sendResponse?.({ ok: true });
+      } catch (error) {
+        sendResponse?.({ ok: false, reason: error?.message || "Failed to open side panel." });
+      }
+    })();
     return true;
   }
 });
