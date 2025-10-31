@@ -2,6 +2,7 @@ const storageKeys = {
   connection: "supahack_connection",
   selectedTable: "supahack_currentTable",
   theme: "supahack_theme",
+  connectionMeta: "supahack_connection_meta",
 };
 
 const state = {
@@ -29,10 +30,7 @@ const dom = {
   connectBtn: document.getElementById("connect-btn"),
   clearStorageBtn: document.getElementById("clear-storage-btn"),
   reloadBtn: document.getElementById("reload-btn"),
-  exploreBtn: document.getElementById("explore-btn"),
   tablesList: document.getElementById("tables-list"),
-  loadCountBtn: document.getElementById("load-count-btn"),
-  tableCountLabel: document.getElementById("table-count-label"),
   connectionStatus: document.getElementById("connection-status"),
   themeToggle: document.getElementById("theme-toggle"),
   themeIcon: document.querySelector(".theme-icon"),
@@ -77,7 +75,7 @@ function applyConnectionToForm(connection, { announce = false } = {}) {
 
   if (announce) {
     if (normalized.projectId || normalized.apiKey || normalized.bearer) {
-      setStatus("Connection details received from DevTools. Review and click Connect.", "success");
+      setStatus("Connection details received from DevTools.", "success");
     } else {
       setStatus("Connection details cleared.", "idle");
     }
@@ -188,32 +186,65 @@ async function getTableRowCount(table) {
 }
 
 function renderTablesList() {
-  dom.tablesList.innerHTML = "";
-  state.tables.forEach((table) => {
-    const option = document.createElement("option");
-    option.value = table;
-    option.textContent = table;
-    dom.tablesList.appendChild(option);
-  });
+  if (!dom.tablesList) return;
 
-  if (state.currentTable && state.tables.includes(state.currentTable)) {
-    dom.tablesList.value = state.currentTable;
-  } else if (state.tables.length) {
-    state.currentTable = state.tables[0];
-    dom.tablesList.value = state.currentTable;
-    storageSet({ [storageKeys.selectedTable]: state.currentTable });
-  } else {
-    state.currentTable = null;
+  dom.tablesList.innerHTML = "";
+
+  if (!state.tables.length) {
+    const emptyRow = document.createElement("tr");
+    emptyRow.className = "tables-empty";
+    const cell = document.createElement("td");
+    cell.colSpan = 2;
+    cell.textContent = state.baseUrl ? "No tables found for this schema." : "Connect to populate tables.";
+    emptyRow.appendChild(cell);
+    dom.tablesList.appendChild(emptyRow);
+    updateActiveRowHighlight();
+    return;
   }
 
-  dom.tablesList.disabled = !state.tables.length;
-  dom.exploreBtn.disabled = !state.currentTable;
-  dom.loadCountBtn.disabled = !state.currentTable;
-  dom.tableCountLabel.textContent = state.currentTable
-    ? `Selected: ${state.currentTable}`
-    : state.tables.length
-      ? "Select a table to load row count."
-      : "Connect to populate tables.";
+  state.tables.forEach((table) => {
+    const row = document.createElement("tr");
+    row.dataset.table = table;
+
+    const nameCell = document.createElement("td");
+    nameCell.textContent = table;
+
+    const countCell = document.createElement("td");
+    const count = state.tableCounts?.[table];
+    if (typeof count === "number") {
+      countCell.textContent = count.toLocaleString();
+    } else if (count === null) {
+      countCell.textContent = "—";
+    } else {
+      countCell.textContent = "…";
+    }
+
+    row.appendChild(nameCell);
+    row.appendChild(countCell);
+    if (state.currentTable === table) {
+      row.classList.add("active");
+    }
+    dom.tablesList.appendChild(row);
+  });
+
+  updateActiveRowHighlight();
+}
+
+function handleTableClick(event) {
+  const row = event.target.closest("tr[data-table]");
+  if (!row) return;
+  const table = row.dataset.table;
+  if (!table) return;
+  setActiveTable(table, { persist: true, announce: false });
+}
+
+function handleTableDoubleClick(event) {
+  const row = event.target.closest("tr[data-table]");
+  if (!row) return;
+  const table = row.dataset.table;
+  if (!table) return;
+  setActiveTable(table, { persist: true, announce: false });
+  openTableExplorer(table);
 }
 
 async function handleConnect(event) {
@@ -224,16 +255,36 @@ async function handleConnect(event) {
     apiKey: sanitize(dom.apiKey.value),
     bearer: sanitize(dom.bearer.value),
   };
+  await connectWithConnection(connection, { triggeredBy: "user" });
+}
 
-  if (!connection.projectId || !connection.apiKey) {
+async function connectWithConnection(connection, { triggeredBy = "user" } = {}) {
+  const normalized = {
+    projectId: sanitize(connection.projectId),
+    schema: sanitize(connection.schema) || "public",
+    apiKey: sanitize(connection.apiKey),
+    bearer: sanitize(connection.bearer || connection.apiKey),
+  };
+
+  if (!normalized.projectId || !normalized.apiKey) {
     setStatus("Project ID and apiKey required.", "error");
     return;
   }
 
-  connection.bearer = connection.bearer || connection.apiKey;
-  applyConnectionToForm(connection, { announce: false });
+  applyConnectionToForm(normalized, { announce: false });
 
-  setStatus("Connecting…", "progress");
+  const previousTable = state.currentTable;
+  state.tables = [];
+  state.tableCounts = {};
+  state.currentTable = null;
+  renderTablesList();
+
+  const statusPrefix = triggeredBy === "devtools"
+    ? "DevTools connection"
+    : triggeredBy === "restore"
+      ? "Restoring connection"
+      : "Connecting";
+  setStatus(`${statusPrefix}…`, "progress");
   dom.connectBtn.disabled = true;
   dom.reloadBtn.disabled = true;
 
@@ -241,10 +292,36 @@ async function handleConnect(event) {
     state.openApi = await fetchOpenApi();
     state.tables = parseTablesFromOpenApi(state.openApi);
     state.tableCounts = {};
-    markConnectionWriteSource("sidepanel");
-    await storageSet({ [storageKeys.connection]: state.connection });
     renderTablesList();
-    setStatus(`Connected (${state.tables.length} tables)`, "success");
+
+    if (state.tables.length) {
+      const initialTable = previousTable && state.tables.includes(previousTable)
+        ? previousTable
+        : state.tables[0];
+      if (initialTable) {
+        setActiveTable(initialTable, { persist: true });
+      }
+    } else {
+      setActiveTable(null);
+    }
+
+    markConnectionWriteSource("sidepanel");
+    const metaSource = triggeredBy === "devtools" || triggeredBy === "restore"
+      ? "sidepanel"
+      : triggeredBy;
+    await storageSet({
+      [storageKeys.connection]: state.connection,
+      [storageKeys.connectionMeta]: { source: metaSource, updatedAt: Date.now() },
+    });
+
+    if (state.tables.length) {
+      await refreshTableCounts();
+    }
+
+    const suffix = state.tables.length
+      ? `Connected (${state.tables.length} table${state.tables.length === 1 ? "" : "s"}).`
+      : "Connected, but no tables were found.";
+    setStatus(suffix, "success");
   } catch (error) {
     console.error(error);
     setStatus(error.message, "error");
@@ -254,48 +331,34 @@ async function handleConnect(event) {
   }
 }
 
-function handleTableSelection() {
-  const option = dom.tablesList.value;
-  state.currentTable = option || null;
-  dom.exploreBtn.disabled = !state.currentTable;
-  dom.loadCountBtn.disabled = !state.currentTable;
-  dom.tableCountLabel.textContent = state.currentTable
-    ? `Selected: ${state.currentTable}`
-    : "Select a table to load row count.";
+async function refreshTableCounts() {
+  if (!state.tables.length) return;
+  setStatus("Counting rows…", "progress");
 
-  if (state.currentTable) {
-    storageSet({ [storageKeys.selectedTable]: state.currentTable });
+  for (const table of state.tables) {
+    try {
+      const count = await getTableRowCount(table);
+      state.tableCounts[table] = typeof count === "number" ? count : null;
+    } catch (error) {
+      console.warn(`Failed to count rows for ${table}`, error);
+      state.tableCounts[table] = null;
+    }
+    renderTablesList();
   }
+
+  setStatus("Row counts updated.", "success");
 }
 
-async function handleLoadCount() {
-  if (!state.currentTable) return;
-  dom.loadCountBtn.disabled = true;
-  setStatus("Loading row count…", "progress");
-
-  try {
-    const count = await getTableRowCount(state.currentTable);
-    state.tableCounts[state.currentTable] = count;
-    dom.tableCountLabel.textContent = count !== null
-      ? `${state.currentTable}: ${count.toLocaleString()} rows`
-      : `${state.currentTable}: count unavailable`;
-    setStatus("Row count loaded.", "success");
-  } catch (error) {
-    console.error(error);
-    dom.tableCountLabel.textContent = `Count failed: ${error.message}`;
-    setStatus(error.message, "error");
-  } finally {
-    dom.loadCountBtn.disabled = false;
-  }
-}
-
-async function handleExplore() {
-  if (!state.currentTable) {
+async function openTableExplorer(table) {
+  const targetTable = table || state.currentTable;
+  if (!targetTable) {
     setStatus("Select a table first.", "error");
     return;
   }
-  await storageSet({ [storageKeys.selectedTable]: state.currentTable });
-  setStatus("Opening explorer…", "progress");
+
+  setActiveTable(targetTable, { persist: true });
+  setStatus(`Opening ${targetTable}…`, "progress");
+
   chrome.runtime.sendMessage({ type: "SUPAHACK_OPEN_EXPLORER" }, (response) => {
     const lastErrorMessage = chrome.runtime.lastError?.message || "";
     const isPortClosed = lastErrorMessage.includes("The message port closed before a response was received");
@@ -311,10 +374,10 @@ async function handleExplore() {
       return;
     }
 
-    setStatus("Explorer opened in page.", "success");
+    setStatus(`Explorer opened for ${targetTable}.`, "success");
     setTimeout(() => {
       const message = state.tables.length
-        ? `Connected (${state.tables.length} tables)`
+        ? `Connected (${state.tables.length} table${state.tables.length === 1 ? "" : "s"})`
         : "Ready";
       setStatus(message, "idle");
     }, 3000);
@@ -328,11 +391,6 @@ async function restoreFromStorage() {
     const stored = await storageGet(storageKeys.connection);
     const saved = stored?.[storageKeys.connection];
     applyConnectionToForm(saved || null, { announce: false });
-    if (saved?.projectId && saved?.apiKey) {
-      setStatus("Restored credentials. Click Connect to refresh tables.", "idle");
-    } else {
-      setStatus("Idle", "idle");
-    }
 
     const tableStored = await storageGet(storageKeys.selectedTable);
     state.currentTable = tableStored?.[storageKeys.selectedTable] || null;
@@ -345,6 +403,24 @@ async function restoreFromStorage() {
     } else {
       setTheme("dark", { persist: false });
     }
+
+    const metaStored = await storageGet(storageKeys.connectionMeta);
+    const meta = metaStored?.[storageKeys.connectionMeta];
+    const autoConnect = Boolean(
+      saved?.projectId &&
+      saved?.apiKey &&
+      meta?.source === "devtools" &&
+      typeof meta?.updatedAt === "number" &&
+      Date.now() - meta.updatedAt < 30000
+    );
+
+    if (autoConnect) {
+      await connectWithConnection(saved, { triggeredBy: "devtools" });
+    } else if (saved?.projectId && saved?.apiKey) {
+      setStatus("Restored credentials. Click Connect to refresh tables.", "idle");
+    } else {
+      setStatus("Idle", "idle");
+    }
   } catch (error) {
     console.error("Storage restore failed", error);
   }
@@ -354,6 +430,7 @@ async function clearSavedConnection() {
   markConnectionWriteSource("sidepanel");
   await storageRemove(storageKeys.connection);
   await storageRemove(storageKeys.selectedTable);
+  await storageRemove(storageKeys.connectionMeta);
 
   applyConnectionToForm(null, { announce: false });
   state.tables = [];
@@ -361,15 +438,15 @@ async function clearSavedConnection() {
   state.currentTable = null;
 
   renderTablesList();
+  setActiveTable(null);
   setStatus("Cleared saved credentials.", "success");
 }
 
 function initEventListeners() {
   dom.connectionForm.addEventListener("submit", handleConnect);
   dom.reloadBtn.addEventListener("click", handleConnect);
-  dom.tablesList.addEventListener("change", handleTableSelection);
-  dom.loadCountBtn.addEventListener("click", handleLoadCount);
-  dom.exploreBtn.addEventListener("click", handleExplore);
+  dom.tablesList.addEventListener("click", handleTableClick);
+  dom.tablesList.addEventListener("dblclick", handleTableDoubleClick);
   dom.clearStorageBtn.addEventListener("click", clearSavedConnection);
   if (dom.themeToggle) {
     dom.themeToggle.addEventListener("click", () => {
@@ -395,12 +472,16 @@ async function init() {
     if (changes[storageKeys.connection]) {
       const change = changes[storageKeys.connection];
       const announce = state.connectionWriteSource !== "sidepanel";
-      applyConnectionToForm(change.newValue || null, { announce });
+      const newConnection = change.newValue || null;
+      applyConnectionToForm(newConnection, { announce });
       if (announce) {
         state.tables = [];
         state.tableCounts = {};
         state.currentTable = null;
         renderTablesList();
+        if (newConnection?.projectId && newConnection?.apiKey) {
+          connectWithConnection(newConnection, { triggeredBy: "devtools" });
+        }
       }
       state.connectionWriteSource = null;
     }
@@ -417,5 +498,34 @@ function setTheme(theme, { persist = true } = {}) {
   }
   if (persist) {
     storageSet({ [storageKeys.theme]: nextTheme });
+  }
+}
+function updateActiveRowHighlight() {
+  if (!dom.tablesList) return;
+  const rows = dom.tablesList.querySelectorAll("tr[data-table]");
+  rows.forEach((row) => {
+    row.classList.toggle("active", row.dataset.table === state.currentTable);
+  });
+}
+
+function setActiveTable(table, { persist = true, announce = false } = {}) {
+  if (!table || !state.tables.includes(table)) {
+    state.currentTable = null;
+    updateActiveRowHighlight();
+    if (persist) {
+      storageRemove(storageKeys.selectedTable);
+    }
+    return;
+  }
+
+  if (state.currentTable !== table) {
+    state.currentTable = table;
+    updateActiveRowHighlight();
+    if (persist) {
+      storageSet({ [storageKeys.selectedTable]: table });
+    }
+    if (announce) {
+      setStatus(`Selected table: ${table}`, "idle");
+    }
   }
 }

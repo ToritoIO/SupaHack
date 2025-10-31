@@ -74,13 +74,21 @@
           <button id="reload-btn" type="button">Reload</button>
         </div>
         <div class="tables-container">
-          <select id="tables-list" size="10"></select>
-          <div class="table-meta">
-            <div id="table-count-label">Select a table to load row count.</div>
-            <button id="load-count-btn" type="button" disabled>Load row count</button>
-          </div>
+          <table class="tables-grid">
+            <thead>
+              <tr>
+                <th scope="col">Table</th>
+                <th scope="col">Rows</th>
+              </tr>
+            </thead>
+            <tbody id="tables-list">
+              <tr class="tables-empty">
+                <td colspan="2">Connect to populate tables.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <button id="explore-btn" type="button" class="primary" disabled>Explore data</button>
+        <p class="hint">Double-click a table to open it. Reload to refresh schema and counts.</p>
       </section>
     </main>
 

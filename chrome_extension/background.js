@@ -1,4 +1,5 @@
 const CONNECTION_STORAGE_KEY = "supahack_connection";
+const CONNECTION_META_KEY = "supahack_connection_meta";
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
@@ -82,7 +83,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       bearer: message.payload.bearer || message.payload.apiKey || "",
     };
 
-    chrome.storage.local.set({ [CONNECTION_STORAGE_KEY]: payload }, () => {
+    chrome.storage.local.set({
+      [CONNECTION_STORAGE_KEY]: payload,
+      [CONNECTION_META_KEY]: { source: "devtools", updatedAt: Date.now() },
+    }, () => {
       if (chrome.runtime.lastError) {
         sendResponse?.({ ok: false, reason: chrome.runtime.lastError.message });
         return;
