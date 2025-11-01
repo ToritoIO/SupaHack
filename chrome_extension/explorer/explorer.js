@@ -1,7 +1,7 @@
 const storageKeys = {
-  connection: "supahack_connection",
-  selectedTable: "supahack_currentTable",
-  theme: "supahack_theme",
+  connection: "sbde_connection",
+  selectedTable: "sbde_currentTable",
+  theme: "sbde_theme",
 };
 
 const state = {
@@ -587,9 +587,9 @@ async function handleDelete(event) {
 
 function handleClose() {
   if (chrome?.runtime?.sendMessage) {
-    chrome.runtime.sendMessage({ type: "SUPAHACK_CLOSE_OVERLAY" });
+    chrome.runtime.sendMessage({ type: "SBDE_CLOSE_OVERLAY" });
   } else {
-    window.parent?.postMessage({ type: "SUPAHACK_CLOSE_OVERLAY" }, "*");
+    window.parent?.postMessage({ type: "SBDE_CLOSE_OVERLAY" }, "*");
   }
 }
 
@@ -628,7 +628,7 @@ function registerEventListeners() {
   dom.updateForm.addEventListener("submit", handleUpdate);
   dom.deleteForm.addEventListener("submit", handleDelete);
   window.addEventListener("message", async (event) => {
-    if (event.data?.type === "SUPAHACK_REFRESH_TABLE") {
+    if (event.data?.type === "SBDE_REFRESH_TABLE") {
       await refreshSelectedTable();
     }
   });

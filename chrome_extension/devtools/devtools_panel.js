@@ -189,10 +189,10 @@ async function sendEntry(entry, card) {
   }
 
   card.classList.add("sending");
-  setStatus("Sending connection details to SupaExplorer…");
+  setStatus("Sending connection details to Supabase Database Explorer…");
 
   try {
-    const response = await sendMessageAsync({ type: "SUPAHACK_APPLY_CONNECTION", payload: connectionPayload });
+    const response = await sendMessageAsync({ type: "SBDE_APPLY_CONNECTION", payload: connectionPayload });
     if (!response?.ok) {
       throw new Error(response?.reason || "Extension rejected the connection payload.");
     }
@@ -203,7 +203,7 @@ async function sendEntry(entry, card) {
   }
 
   card.classList.remove("sending");
-  setStatus("Connection sent. Opening SupaExplorer side panel…");
+  setStatus("Connection sent. Opening Supabase Database Explorer side panel…");
   openSidePanel();
 }
 
@@ -248,7 +248,7 @@ async function openSidePanel() {
     return;
   }
 
-  setStatus("Opening SupaExplorer side panel…");
+  setStatus("Opening Supabase Database Explorer side panel…");
 
   if (chrome?.sidePanel?.open) {
     try {
@@ -256,7 +256,7 @@ async function openSidePanel() {
         await chrome.sidePanel.setOptions({ tabId, path: "panel/sidepanel.html" });
       }
       await chrome.sidePanel.open({ tabId });
-      setStatus("SupaExplorer side panel opened.");
+      setStatus("Supabase Database Explorer side panel opened.");
       return;
     } catch (error) {
       console.warn("Direct side panel open from DevTools failed", error);
@@ -269,11 +269,11 @@ async function openSidePanel() {
   }
 
   try {
-    const response = await sendMessageAsync({ type: "SUPAEXPLORER_OPEN_SIDE_PANEL", tabId });
+    const response = await sendMessageAsync({ type: "SBDE_OPEN_SIDE_PANEL", tabId });
     if (!response?.ok) {
       throw new Error(response?.reason || "Side panel did not open.");
     }
-    setStatus("SupaExplorer side panel opened.");
+    setStatus("Supabase Database Explorer side panel opened.");
   } catch (error) {
     if (isUserGestureError(error)) {
       setStatus("Chrome blocked the side panel because it wasn't triggered directly. Click again or open it via the toolbar icon.");

@@ -1,9 +1,9 @@
 (() => {
   try {
-    if (window.__supahackDetectorInjected) {
+    if (window.__sbdeDetectorInjected) {
       return;
     }
-    window.__supahackDetectorInjected = true;
+    window.__sbdeDetectorInjected = true;
   } catch (error) {
     // Best-effort guard; proceed with injection even if we cannot set the flag.
   }

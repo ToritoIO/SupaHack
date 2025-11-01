@@ -1,11 +1,11 @@
 ;(function () {
-  if (window.__supahackOverlayBridge) {
-    window.__supahackOverlayBridge.open();
+  if (window.__sbdeOverlayBridge) {
+    window.__sbdeOverlayBridge.open();
     return;
   }
 
-  var OVERLAY_ID = "supahack-explorer-overlay";
-  var REFRESH_EVENT = "SUPAHACK_REFRESH_TABLE";
+  var OVERLAY_ID = "sbde-explorer-overlay";
+  var REFRESH_EVENT = "SBDE_REFRESH_TABLE";
   var overlayFrame = null;
 
   function postRefresh() {
@@ -40,7 +40,7 @@
       overlay.style.pointerEvents = "none";
 
       var backdrop = document.createElement("div");
-      backdrop.className = "supahack-overlay-backdrop";
+      backdrop.className = "sbde-overlay-backdrop";
       backdrop.style.position = "absolute";
       backdrop.style.inset = "0";
       backdrop.style.background = "rgba(15, 23, 42, 0.65)";
@@ -101,10 +101,10 @@
   }
 
   chrome.runtime.onMessage.addListener(function (message) {
-    if (message && message.type === "SUPAHACK_OPEN_OVERLAY") {
+    if (message && message.type === "SBDE_OPEN_OVERLAY") {
       openOverlay();
     }
-    if (message && message.type === "SUPAHACK_CLOSE_OVERLAY") {
+    if (message && message.type === "SBDE_CLOSE_OVERLAY") {
       removeOverlay();
     }
   });
@@ -113,15 +113,15 @@
     if (!event?.data || typeof event.data.type !== "string") {
       return;
     }
-    if (event.data.type === "SUPAHACK_CLOSE_OVERLAY") {
+    if (event.data.type === "SBDE_CLOSE_OVERLAY") {
       removeOverlay();
     }
-    if (event.data.type === "SUPAHACK_OPEN_OVERLAY") {
+    if (event.data.type === "SBDE_OPEN_OVERLAY") {
       openOverlay();
     }
   });
 
-  window.__supahackOverlayBridge = {
+  window.__sbdeOverlayBridge = {
     open: openOverlay,
     close: removeOverlay,
     refresh: postRefresh,

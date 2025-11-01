@@ -1,8 +1,8 @@
 (() => {
   const BUBBLE_ID = "supaexplorer-floating-bubble";
   const MESSAGE_ID = "supaexplorer-floating-message";
-  const SHOW_EVENT = "SUPAEXPLORER_SHOW_BUBBLE";
-  const HIDE_EVENT = "SUPAEXPLORER_HIDE_BUBBLE";
+  const SHOW_EVENT = "SBDE_SHOW_BUBBLE";
+  const HIDE_EVENT = "SBDE_HIDE_BUBBLE";
 
   if (window.__supaexplorerBubbleInjected) {
     return;
@@ -35,8 +35,8 @@
     bubble.style.transformOrigin = "center";
 
     const icon = document.createElement("img");
-    icon.src = chrome.runtime.getURL("panel/supahack.svg");
-    icon.alt = "Open SupaExplorer";
+    icon.src = chrome.runtime.getURL("panel/supabase-database-explorer.svg");
+    icon.alt = "Open Supabase Database Explorer";
     icon.style.width = "28px";
     icon.style.height = "28px";
     icon.style.pointerEvents = "none";
@@ -84,7 +84,7 @@
     message.style.pointerEvents = "none";
     message.style.transition = "opacity 0.25s ease";
     message.style.zIndex = "2147483644";
-    message.textContent = "Supabase detected. Click the SupaExplorer extension icon in the toolbar to open the side panel.";
+    message.textContent = "Supabase detected. Click the Supabase Database Explorer extension icon in the toolbar to open the side panel.";
 
     document.documentElement.appendChild(message);
     return message;

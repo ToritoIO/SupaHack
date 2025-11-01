@@ -1,8 +1,8 @@
 const storageKeys = {
-  connection: "supahack_connection",
-  selectedTable: "supahack_currentTable",
-  theme: "supahack_theme",
-  connectionMeta: "supahack_connection_meta",
+  connection: "sbde_connection",
+  selectedTable: "sbde_currentTable",
+  theme: "sbde_theme",
+  connectionMeta: "sbde_connection_meta",
 };
 
 const state = {
@@ -31,11 +31,30 @@ const dom = {
   connectBtn: document.getElementById("connect-btn"),
   clearStorageBtn: document.getElementById("clear-storage-btn"),
   reloadBtn: document.getElementById("reload-btn"),
+  reportBtn: document.getElementById("report-btn"),
   tablesList: document.getElementById("tables-list"),
   connectionStatus: document.getElementById("connection-status"),
   themeToggle: document.getElementById("theme-toggle"),
   themeIcon: document.querySelector(".theme-icon"),
 };
+
+const sensitiveColumnIndicators = [
+  "password",
+  "token",
+  "secret",
+  "email",
+  "phone",
+  "address",
+  "ssn",
+  "credit",
+  "card",
+  "api",
+  "key",
+  "auth",
+  "metadata",
+];
+
+const REPORT_VERSION = "2025-11-01";
 
 function sanitize(value) {
   return (value || "").trim();
@@ -157,6 +176,130 @@ function parseTablesFromOpenApi(openApi) {
   return Array.from(names).sort();
 }
 
+function sendMessageAsync(message) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        const lastError = chrome.runtime.lastError;
+        if (lastError) {
+          reject(new Error(lastError.message));
+          return;
+        }
+        resolve(response);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function updateReportButtonState({ busy = false } = {}) {
+  if (!dom.reportBtn) return;
+  if (busy) {
+    dom.reportBtn.disabled = true;
+    dom.reportBtn.classList.add("is-busy");
+    return;
+  }
+  dom.reportBtn.classList.remove("is-busy");
+  const shouldDisable = !state.baseUrl || !(state.tables && state.tables.length);
+  dom.reportBtn.disabled = shouldDisable;
+}
+
+function generateLocalId(prefix = "id") {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function decodeJwtClaims(token) {
+  if (!token || typeof token !== "string") return null;
+  const parts = token.split(".");
+  if (parts.length < 2) return null;
+  try {
+    let payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const pad = payload.length % 4;
+    if (pad) {
+      payload += "=".repeat(4 - pad);
+    }
+    const json = atob(payload);
+    return JSON.parse(json);
+  } catch (error) {
+    return null;
+  }
+}
+
+function inferRoleFromClaims(claims) {
+  if (!claims || typeof claims !== "object") return null;
+  if (typeof claims.role === "string" && claims.role.trim()) {
+    return claims.role.trim();
+  }
+  const metadataRole = claims?.app_metadata?.role;
+  if (typeof metadataRole === "string" && metadataRole.trim()) {
+    return metadataRole.trim();
+  }
+  const aud = claims?.aud;
+  if (Array.isArray(aud)) {
+    if (aud.includes("service_role")) return "service_role";
+    if (aud.includes("anon")) return "anon";
+  } else if (typeof aud === "string") {
+    if (aud === "authenticated" || aud === "anon") return "anon";
+    if (aud === "service_role") return "service_role";
+  }
+  return null;
+}
+
+function isSensitiveColumn(name) {
+  if (!name || typeof name !== "string") return false;
+  const lower = name.toLowerCase();
+  return sensitiveColumnIndicators.some((indicator) => lower.includes(indicator));
+}
+
+function findSensitiveColumns(columns) {
+  if (!Array.isArray(columns)) return [];
+  return columns.filter(isSensitiveColumn);
+}
+
+function parseRowCountFromRange(range) {
+  if (!range || typeof range !== "string" || !range.includes("/")) return null;
+  const total = range.split("/").pop();
+  if (!total || total === "*") {
+    return null;
+  }
+  const num = Number(total);
+  return Number.isFinite(num) ? num : null;
+}
+
+function trimErrorMessage(text, limit = 200) {
+  if (!text || typeof text !== "string") return "";
+  const trimmed = text.trim();
+  if (trimmed.length <= limit) return trimmed;
+  return `${trimmed.slice(0, limit)}…`;
+}
+
+function formatList(items, limit = 5) {
+  if (!Array.isArray(items) || !items.length) return "";
+  const slice = items.slice(0, limit);
+  const remainder = items.length - slice.length;
+  if (remainder > 0) {
+    return `${slice.join(", ")} and ${remainder} more`;
+  }
+  return slice.join(", ");
+}
+
+function summarizeClaims(claims) {
+  if (!claims || typeof claims !== "object") return null;
+  const summary = {};
+  if (typeof claims.role === "string") summary.role = claims.role;
+  if (typeof claims.ref === "string") summary.ref = claims.ref;
+  if (typeof claims.iss === "string") summary.iss = claims.iss;
+  if (typeof claims.sub === "string") summary.sub = claims.sub;
+  if (typeof claims.aud === "string" || Array.isArray(claims.aud)) summary.aud = claims.aud;
+  if (typeof claims.exp === "number") summary.exp = claims.exp;
+  if (typeof claims.iat === "number") summary.iat = claims.iat;
+  return summary;
+}
+
 async function getTableRowCount(table) {
   const url = new URL(`${state.baseUrl.replace(/\/$/, "")}/${table}`);
   const headers = buildHeaders(state.connection);
@@ -188,6 +331,8 @@ async function getTableRowCount(table) {
 
 function renderTablesList() {
   if (!dom.tablesList) return;
+
+  updateReportButtonState();
 
   dom.tablesList.innerHTML = "";
 
@@ -341,6 +486,7 @@ async function connectWithConnection(connection, { triggeredBy = "user" } = {}) 
   } finally {
     dom.connectBtn.disabled = false;
     dom.reloadBtn.disabled = false;
+    updateReportButtonState();
   }
 }
 
@@ -375,6 +521,249 @@ async function refreshTableCounts() {
   }
 }
 
+async function analyzeTableSecurity(table) {
+  const url = new URL(`${state.baseUrl.replace(/\/$/, "")}/${table}`);
+  const headers = buildHeaders(state.connection);
+  headers.Prefer = "count=exact";
+  url.searchParams.set("select", "*");
+  url.searchParams.set("limit", "1");
+
+  let accessible = false;
+  let status = null;
+  let rowCount = typeof state.tableCounts?.[table] === "number" ? state.tableCounts[table] : null;
+  let columns = [];
+  let errorDetail = null;
+
+  try {
+    const response = await fetch(url.toString(), { headers });
+    status = response.status;
+    const contentRange = response.headers.get("Content-Range");
+    const parsedCount = parseRowCountFromRange(contentRange);
+    if (parsedCount !== null) {
+      rowCount = parsedCount;
+      if (!state.tableCounts) state.tableCounts = {};
+      state.tableCounts[table] = parsedCount;
+    }
+
+    if (response.ok) {
+      accessible = true;
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (parseError) {
+        body = null;
+      }
+      if (Array.isArray(body) && body.length && body[0] && typeof body[0] === "object") {
+        columns = Object.keys(body[0]);
+      }
+    } else {
+      const text = await response.text();
+      errorDetail = trimErrorMessage(text);
+    }
+  } catch (error) {
+    errorDetail = error instanceof Error ? error.message : String(error || "Fetch failed.");
+  }
+
+  const uniqueColumns = Array.from(new Set(columns || [])).slice(0, 12);
+  const sensitiveColumns = findSensitiveColumns(uniqueColumns);
+  const warnings = [];
+  const notes = [];
+  let policyState = "unknown";
+
+  if (accessible) {
+    policyState = "likely-unprotected";
+    warnings.push("Table responds with data using the current credentials. Enable RLS and restrictive policies.");
+    if (typeof rowCount === "number") {
+      notes.push(`Approximate row count: ${rowCount.toLocaleString()}.`);
+      if (rowCount > 1000) {
+        warnings.push("Large row count is exposed; attackers can exfiltrate datasets with filter operators.");
+      }
+    }
+    if (uniqueColumns.length) {
+      notes.push(`Columns observed: ${uniqueColumns.join(", ")}`);
+    }
+    if (sensitiveColumns.length) {
+      warnings.push(`Sensitive-looking columns exposed: ${sensitiveColumns.join(", ")}.`);
+    }
+  } else if (status === 401 || status === 403) {
+    policyState = "protected";
+    notes.push("API returned 401/403 for this table, indicating RLS or equivalent protection.");
+    if (errorDetail) {
+      notes.push(`Error detail: ${errorDetail}`);
+    }
+  } else {
+    policyState = "unknown";
+    if (errorDetail) {
+      notes.push(`Access failed: ${errorDetail}`);
+    }
+  }
+
+  return {
+    name: table,
+    accessible,
+    status,
+    rowCount: typeof rowCount === "number" ? rowCount : null,
+    columns: uniqueColumns,
+    sensitiveColumns,
+    warnings,
+    notes,
+    error: errorDetail,
+    policyState,
+  };
+}
+
+function buildSecurityRecommendations({ accessibleTables, sensitiveTables, keyRole, bearerRole }) {
+  const recommendations = [];
+  const exposedNames = formatList(accessibleTables.map((item) => item.name));
+  const sensitiveNames = formatList(sensitiveTables.map((item) => item.name));
+  const sensitiveColumnsCombined = Array.from(
+    new Set(sensitiveTables.flatMap((item) => item.sensitiveColumns || []))
+  );
+  const sensitiveColumnsPreview = formatList(sensitiveColumnsCombined);
+
+  if (accessibleTables.length) {
+    recommendations.push({
+      id: "rls",
+      title: "Enforce Row Level Security on exposed tables",
+      detail: `The following tables respond to anonymous/service requests: ${exposedNames}. Enable RLS and create explicit SELECT policies that scope rows to authorized users only.`,
+      severity: keyRole === "anon" || bearerRole === "anon" ? "critical" : "high",
+    });
+  }
+
+  if (sensitiveTables.length) {
+    recommendations.push({
+      id: "sensitive-columns",
+      title: "Protect sensitive columns behind policies or RPCs",
+      detail: `Sensitive-looking columns (${sensitiveColumnsPreview}) were exposed by ${sensitiveNames}. Restrict them to trusted roles or move them behind server-side functions.`,
+      severity: "high",
+    });
+  }
+
+  if (keyRole === "service_role" || bearerRole === "service_role") {
+    recommendations.push({
+      id: "service-role",
+      title: "Remove service_role keys from client-side contexts",
+      detail: "Service role keys bypass RLS entirely. Rotate this key and move privileged operations to secure backend services.",
+      severity: "critical",
+    });
+  }
+
+  if (accessibleTables.length) {
+    recommendations.push({
+      id: "filters",
+      title: "Test filter operators against exposed endpoints",
+      detail: "Use Supabase filter operators (`eq`, `neq`, `ilike`, `in`) to ensure unauthorized users cannot pivot across tables, as highlighted in the DeepStrike misconfiguration research.",
+      severity: "high",
+    });
+  } else {
+    recommendations.push({
+      id: "regression-tests",
+      title: "Add automated RLS regression tests",
+      detail: "Keep integration tests that exercise anon and authenticated roles so future schema changes do not re-open exposures.",
+      severity: "medium",
+    });
+  }
+
+  return recommendations;
+}
+
+async function buildSecurityReport() {
+  const createdAt = new Date().toISOString();
+  const reportId = generateLocalId("sbde_report");
+  const apiKeyClaims = decodeJwtClaims(state.connection.apiKey);
+  const bearerClaims = state.connection.bearer && state.connection.bearer !== state.connection.apiKey
+    ? decodeJwtClaims(state.connection.bearer)
+    : null;
+  const keyRole = inferRoleFromClaims(apiKeyClaims);
+  const bearerRole = inferRoleFromClaims(bearerClaims);
+
+  const findings = [];
+  for (const table of state.tables) {
+    // eslint-disable-next-line no-await-in-loop
+    const detail = await analyzeTableSecurity(table);
+    findings.push(detail);
+  }
+
+  const accessibleTables = findings.filter((item) => item.accessible);
+  const protectedTables = findings.filter((item) => item.policyState === "protected");
+  const sensitiveTables = accessibleTables.filter((item) => item.sensitiveColumns.length);
+  const unknownTables = findings.filter((item) => !item.accessible && item.policyState === "unknown");
+
+  let riskLevel = "low";
+  const keyFindings = [];
+
+  if (accessibleTables.length) {
+    riskLevel = keyRole === "anon" || bearerRole === "anon" ? "critical" : "high";
+    keyFindings.push(`${accessibleTables.length} table${accessibleTables.length === 1 ? "" : "s"} respond with data using the current credentials.`);
+  }
+  if (!accessibleTables.length && unknownTables.length) {
+    riskLevel = "medium";
+    keyFindings.push(`${unknownTables.length} table${unknownTables.length === 1 ? "" : "s"} returned non-auth errors that need manual review.`);
+  }
+  if (!keyFindings.length && protectedTables.length) {
+    keyFindings.push(`All checked tables returned 401/403 responses (${protectedTables.length} protected).`);
+  }
+
+  const recommendations = buildSecurityRecommendations({
+    accessibleTables,
+    sensitiveTables,
+    keyRole,
+    bearerRole,
+  });
+
+  return {
+    id: reportId,
+    createdAt,
+    projectId: state.connection.projectId,
+    schema: state.connection.schema,
+    baseUrl: state.baseUrl,
+    reportVersion: REPORT_VERSION,
+    connectionSummary: {
+      apiKeyRole: keyRole || null,
+      bearerRole: bearerRole || null,
+      usesDistinctBearer: Boolean(state.connection.bearer && state.connection.bearer !== state.connection.apiKey),
+      apiKeyClaims: summarizeClaims(apiKeyClaims),
+      bearerClaims: summarizeClaims(bearerClaims),
+    },
+    summary: {
+      riskLevel,
+      tableCount: findings.length,
+      accessibleCount: accessibleTables.length,
+      protectedCount: protectedTables.length,
+      unknownCount: unknownTables.length,
+      keyFindings,
+    },
+    findings,
+    recommendations,
+  };
+}
+
+async function handleGenerateReport(event) {
+  event?.preventDefault();
+  if (!state.baseUrl || !state.tables.length) {
+    setStatus("Connect and load tables before generating a report.", "error");
+    return;
+  }
+
+  updateReportButtonState({ busy: true });
+  setStatus("Building security report…", "progress");
+
+  try {
+    const report = await buildSecurityReport();
+    const response = await sendMessageAsync({ type: "SBDE_CREATE_SECURITY_REPORT", payload: report });
+    if (!response?.ok) {
+      throw new Error(response?.reason || "Failed to open security report.");
+    }
+    setStatus("Security report opened in a new tab.", "success");
+  } catch (error) {
+    console.error("Security report generation failed", error);
+    const message = error instanceof Error ? error.message : String(error || "Security report failed.");
+    setStatus(message, "error");
+  } finally {
+    updateReportButtonState();
+  }
+}
+
 async function openTableExplorer(table) {
   const targetTable = table || state.currentTable;
   if (!targetTable) {
@@ -385,7 +774,7 @@ async function openTableExplorer(table) {
   setActiveTable(targetTable, { persist: true });
   setStatus(`Opening ${targetTable}…`, "progress");
 
-  chrome.runtime.sendMessage({ type: "SUPAHACK_OPEN_EXPLORER" }, (response) => {
+  chrome.runtime.sendMessage({ type: "SBDE_OPEN_EXPLORER" }, (response) => {
     const lastErrorMessage = chrome.runtime.lastError?.message || "";
     const isPortClosed = lastErrorMessage.includes("The message port closed before a response was received");
 
@@ -412,7 +801,7 @@ async function openTableExplorer(table) {
 
 async function restoreFromStorage() {
   try {
-    chrome.storage.local.remove("supahack_capturedRequest");
+    chrome.storage.local.remove("sbde_capturedRequest");
 
     const stored = await storageGet(storageKeys.connection);
     const saved = stored?.[storageKeys.connection];
@@ -479,6 +868,9 @@ function initEventListeners() {
   dom.tablesList.addEventListener("click", handleTableClick);
   dom.tablesList.addEventListener("dblclick", handleTableDoubleClick);
   dom.clearStorageBtn.addEventListener("click", clearSavedConnection);
+  if (dom.reportBtn) {
+    dom.reportBtn.addEventListener("click", handleGenerateReport);
+  }
   if (dom.themeToggle) {
     dom.themeToggle.addEventListener("click", () => {
       const next = state.theme === "dark" ? "light" : "dark";

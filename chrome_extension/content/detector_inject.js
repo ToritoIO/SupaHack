@@ -1,6 +1,6 @@
 (() => {
   const SUPABASE_HOST_FRAGMENT = ".supabase.co";
-  const MESSAGE_TYPE = "SUPAHACK_SUPABASE_REQUEST";
+  const MESSAGE_TYPE = "SBDE_SUPABASE_REQUEST";
 
   const cleanApiKey = (raw) => {
     if (!raw || typeof raw !== "string") return null;
@@ -60,9 +60,9 @@
   const originalOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function patchedOpen(method, url) {
     try {
-      this.__supahackSupabaseUrl = url;
+      this.__sbdeSupabaseUrl = url;
     } catch (error) {
-      this.__supahackSupabaseUrl = undefined;
+      this.__sbdeSupabaseUrl = undefined;
     }
     return originalOpen.apply(this, arguments);
   };
@@ -70,14 +70,14 @@
   const originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.setRequestHeader = function patchedSetRequestHeader(name, value) {
     try {
-      if (this.__supahackSupabaseUrl && hasSupabaseHost(this.__supahackSupabaseUrl)) {
+      if (this.__sbdeSupabaseUrl && hasSupabaseHost(this.__sbdeSupabaseUrl)) {
         const lower = String(name || "").toLowerCase();
         if (lower === "accept-profile") {
-          this.__supahackSupabaseSchema = value;
+          this.__sbdeSupabaseSchema = value;
         }
         if (lower === "apikey" || lower === "authorization") {
-          const schema = this.__supahackSupabaseSchema;
-          sendDetection(this.__supahackSupabaseUrl, value, schema);
+          const schema = this.__sbdeSupabaseSchema;
+          sendDetection(this.__sbdeSupabaseUrl, value, schema);
         }
       }
     } catch (error) {

@@ -1,12 +1,15 @@
-const CONNECTION_STORAGE_KEY = "supahack_connection";
-const CONNECTION_META_KEY = "supahack_connection_meta";
+const CONNECTION_STORAGE_KEY = "sbde_connection";
+const CONNECTION_META_KEY = "sbde_connection_meta";
 const DETECTOR_SOURCE = "detector";
 const PANEL_OPEN_COOLDOWN_MS = 5000;
+const REPORT_STORAGE_KEY = "sbde_security_reports";
+const REPORT_MAX_ENTRIES = 10;
+const REPORT_TTL_MS = 1000 * 60 * 60 * 24;
 
 const tabDetectionCache = new Map();
 const panelOpenTimestamps = new Map();
-const SHOW_BUBBLE_MESSAGE = "SUPAEXPLORER_SHOW_BUBBLE";
-const HIDE_BUBBLE_MESSAGE = "SUPAEXPLORER_HIDE_BUBBLE";
+const SHOW_BUBBLE_MESSAGE = "SBDE_SHOW_BUBBLE";
+const HIDE_BUBBLE_MESSAGE = "SBDE_HIDE_BUBBLE";
 
 const cleanApiKey = (raw) => {
   if (!raw || typeof raw !== "string") return null;
@@ -69,6 +72,61 @@ const isSupabaseUrl = (url) => {
     return url.includes(".supabase.co");
   }
 };
+
+function normalizeReportPayload(report) {
+  if (!report || typeof report !== "object") {
+    throw new Error("Invalid report payload.");
+  }
+  if (!report.id || typeof report.id !== "string") {
+    throw new Error("Report payload missing id.");
+  }
+  const createdAt = typeof report.createdAt === "string" ? report.createdAt : new Date().toISOString();
+  return { ...report, createdAt };
+}
+
+async function persistSecurityReport(report) {
+  const normalized = normalizeReportPayload(report);
+  const stored = await chrome.storage.local.get([REPORT_STORAGE_KEY]);
+  const current = stored?.[REPORT_STORAGE_KEY];
+  const map = current && typeof current === "object" ? { ...current } : {};
+  map[normalized.id] = normalized;
+
+  const now = Date.now();
+  const entries = Object.values(map)
+    .filter((entry) => entry && typeof entry.id === "string")
+    .sort((a, b) => {
+      const aTime = new Date(a.createdAt || 0).getTime();
+      const bTime = new Date(b.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+
+  const trimmed = [];
+  for (const entry of entries) {
+    const createdAtMs = new Date(entry.createdAt || 0).getTime();
+    if (Number.isFinite(createdAtMs) && now - createdAtMs > REPORT_TTL_MS) {
+      continue;
+    }
+    trimmed.push(entry);
+    if (trimmed.length >= REPORT_MAX_ENTRIES) {
+      break;
+    }
+  }
+
+  const nextStore = {};
+  trimmed.forEach((entry) => {
+    nextStore[entry.id] = entry;
+  });
+
+  await chrome.storage.local.set({ [REPORT_STORAGE_KEY]: nextStore });
+  return normalized;
+}
+
+async function createSecurityReportTab(report) {
+  const saved = await persistSecurityReport(report);
+  const url = chrome.runtime.getURL(`report/report.html?id=${encodeURIComponent(saved.id)}`);
+  await chrome.tabs.create({ url });
+  return saved.id;
+}
 
 async function handleSupabaseDetection({ tabId, url, apiKey, schema }) {
   const cleanKey = cleanApiKey(apiKey);
@@ -199,7 +257,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "SUPAHACK_OPEN_EXPLORER") {
+  if (message?.type === "SBDE_OPEN_EXPLORER") {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
 
@@ -214,7 +272,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       const trySendOverlay = () => new Promise((resolve, reject) => {
-        chrome.tabs.sendMessage(tab.id, { type: "SUPAHACK_OPEN_OVERLAY" }, () => {
+        chrome.tabs.sendMessage(tab.id, { type: "SBDE_OPEN_OVERLAY" }, () => {
           if (chrome.runtime.lastError) {
             reject(chrome.runtime.lastError);
           } else {
@@ -236,11 +294,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === "SUPAHACK_CLOSE_OVERLAY") {
+  if (message?.type === "SBDE_CLOSE_OVERLAY") {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
       if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, { type: "SUPAHACK_CLOSE_OVERLAY" }, () => {
+        chrome.tabs.sendMessage(tab.id, { type: "SBDE_CLOSE_OVERLAY" }, () => {
           if (chrome.runtime.lastError) {
             // Ignore missing content script
           }
@@ -250,7 +308,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  if (message?.type === "SUPAHACK_SUPABASE_REQUEST") {
+  if (message?.type === "SBDE_SUPABASE_REQUEST") {
     const tabId = sender?.tab?.id;
     handleSupabaseDetection({
       tabId,
@@ -263,7 +321,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === "SUPAHACK_APPLY_CONNECTION" && message?.payload) {
+  if (message?.type === "SBDE_APPLY_CONNECTION" && message?.payload) {
     const payload = {
       projectId: message.payload.projectId || "",
       schema: message.payload.schema || "public",
@@ -284,7 +342,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === "SUPAEXPLORER_OPEN_SIDE_PANEL") {
+  if (message?.type === "SBDE_CREATE_SECURITY_REPORT" && message?.payload) {
+    (async () => {
+      try {
+        const id = await createSecurityReportTab(message.payload);
+        sendResponse?.({ ok: true, id });
+      } catch (error) {
+        sendResponse?.({ ok: false, reason: error instanceof Error ? error.message : String(error || "Failed to create report.") });
+      }
+    })();
+    return true;
+  }
+
+  if (message?.type === "SBDE_OPEN_SIDE_PANEL") {
     const targetTabId = message.tabId ?? sender?.tab?.id;
     if (!targetTabId) {
       sendResponse?.({ ok: false, reason: "No tabId provided for side panel request." });
