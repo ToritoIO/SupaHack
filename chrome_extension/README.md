@@ -5,7 +5,7 @@ SupaExplorer helps security reviewers, red-teamers, and Supabase builders discov
 ## Demo Video
 
 <a href="https://www.youtube.com/watch?v=qMo5tozDHxE">
-  <img src="https://img.youtube.com/vi/qMo5tozDHxE/0.jpg" alt="SupaExplorer Demo Video" width="100%">
+  <img src="https://img.youtube.com/vi/qMo5tozDHxE/maxresdefault.jpg" alt="SupaExplorer Demo Video" width="100%">
 </a>
 
 ## Core Capabilities
