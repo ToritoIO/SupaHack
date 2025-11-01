@@ -2,6 +2,9 @@
 
 SupaExplorer helps security reviewers, red-teamers, and Supabase builders discover how an application talks to Supabase without leaving the page they are testing.
 
+## Architecture Diagram
+Review the end-to-end flow in the [architecture diagram](./architecture-diagram.md).
+
 ## Demo Video
 
 <a href="https://www.youtube.com/watch?v=qMo5tozDHxE">
