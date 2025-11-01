@@ -14,6 +14,8 @@
   --gradient-bg: #ffffff;
   --card-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
   --table-header-bg: rgba(241, 245, 249, 0.9);
+  --accent: #1e73be;
+  --accent-dark: #14518a;
 }
 
 .report-header {
@@ -34,30 +36,46 @@
 
 .download-btn {
   align-self: flex-end;
-  background: #2563eb;
+  background: var(--accent);
   color: #ffffff;
-  border: none;
+  border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 8px 16px;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
-  transition: background 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 4px 12px rgba(30, 115, 190, 0.25);
+  transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.download-btn:hover {
-  background: #1d4ed8;
+.download-btn:hover:not(:disabled) {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
   transform: translateY(-1px);
 }
 
 .download-btn:focus {
-  outline: 2px solid rgba(37, 99, 235, 0.4);
+  outline: 2px solid rgba(30, 115, 190, 0.35);
   outline-offset: 2px;
 }
 
 .download-btn:active {
   transform: translateY(0);
+}
+
+.download-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+}
+
+.download-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .report-root {
@@ -104,12 +122,12 @@
 
 .risk-badge[data-level="medium"] {
   background: rgba(250, 204, 21, 0.2);
-  color: #fde68a;
+  color: #aa8a08;
 }
 
 .risk-badge[data-level="low"] {
   background: rgba(34, 197, 94, 0.2);
-  color: #bbf7d0;
+  color: #0b692c;
 }
 
 .key-findings {
@@ -282,6 +300,7 @@
   .download-btn {
     width: 100%;
     text-align: center;
+    justify-content: center;
   }
 }
 
