@@ -196,6 +196,37 @@ main {
   gap: 16px;
 }
 
+.app-footer {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+}
+
+.torito-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  color: var(--muted-text);
+  text-decoration: none;
+}
+
+.torito-link:hover,
+.torito-link:focus {
+  color: var(--accent);
+}
+
+.torito-logo {
+  width: 30px;
+  height: 30px;
+}
+
+body[data-theme="dark"] .torito-logo {
+  filter: brightness(0) invert(1);
+}
+
 .card {
   background: var(--card-bg);
   border: 1px solid var(--border);

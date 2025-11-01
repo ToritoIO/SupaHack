@@ -35,7 +35,7 @@
     bubble.style.transformOrigin = "center";
 
     const icon = document.createElement("img");
-    icon.src = chrome.runtime.getURL("supahack.svg");
+    icon.src = chrome.runtime.getURL("panel/supahack.svg");
     icon.alt = "Open SupaExplorer";
     icon.style.width = "28px";
     icon.style.height = "28px";

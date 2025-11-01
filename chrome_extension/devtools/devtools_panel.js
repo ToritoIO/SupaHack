@@ -253,7 +253,7 @@ async function openSidePanel() {
   if (chrome?.sidePanel?.open) {
     try {
       if (typeof chrome.sidePanel.setOptions === "function") {
-        await chrome.sidePanel.setOptions({ tabId, path: "sidepanel.html" });
+        await chrome.sidePanel.setOptions({ tabId, path: "panel/sidepanel.html" });
       }
       await chrome.sidePanel.open({ tabId });
       setStatus("SupaExplorer side panel opened.");

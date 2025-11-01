@@ -171,7 +171,7 @@ async function openSidePanelForTab(tabId, { force = false } = {}) {
   }
   panelOpenTimestamps.set(tabId, now);
   try {
-    await chrome.sidePanel.setOptions({ tabId, path: "sidepanel.html" });
+    await chrome.sidePanel.setOptions({ tabId, path: "panel/sidepanel.html" });
     await chrome.sidePanel.open({ tabId });
   } catch (error) {
     if (error?.message?.toLowerCase().includes("user gesture")) {
@@ -226,7 +226,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       trySendOverlay()
         .then(() => sendResponse({ ok: true }))
         .catch((error) => {
-          chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] })
+          chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content/content.js"] })
             .then(() => trySendOverlay()
               .then(() => sendResponse({ ok: true }))
               .catch((err) => sendResponse({ ok: false, reason: err?.message || "Failed to open overlay." })))

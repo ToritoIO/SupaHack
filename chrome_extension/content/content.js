@@ -60,7 +60,7 @@
       frameWrapper.style.pointerEvents = "auto";
 
       overlayFrame = document.createElement("iframe");
-      overlayFrame.src = chrome.runtime.getURL("explorer.html");
+      overlayFrame.src = chrome.runtime.getURL("explorer/explorer.html");
       overlayFrame.style.border = "none";
       overlayFrame.style.width = "100%";
       overlayFrame.style.height = "100%";

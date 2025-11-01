@@ -10,7 +10,7 @@
 
   const inject = () => {
     const script = document.createElement("script");
-    script.src = chrome.runtime.getURL("detector_inject.js");
+    script.src = chrome.runtime.getURL("content/detector_inject.js");
     script.type = "text/javascript";
     script.async = false;
     script.onload = () => {
