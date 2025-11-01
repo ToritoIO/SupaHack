@@ -21,6 +21,7 @@
   flex-direction: column;
   gap: 8px;
   margin-bottom: 24px;
+  align-items: flex-start;
 }
 
 .report-meta {
@@ -29,6 +30,34 @@
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.download-btn {
+  align-self: flex-end;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.download-btn:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.download-btn:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.4);
+  outline-offset: 2px;
+}
+
+.download-btn:active {
+  transform: translateY(0);
 }
 
 .report-root {
@@ -248,5 +277,16 @@
 @media (max-width: 768px) {
   .report-body {
     padding: 16px;
+  }
+
+  .download-btn {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+@media print {
+  .download-btn {
+    display: none !important;
   }
 }

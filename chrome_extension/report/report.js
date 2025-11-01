@@ -4,6 +4,7 @@ const dom = {
   root: document.getElementById("report-root"),
   meta: document.getElementById("report-meta"),
   version: document.getElementById("report-version"),
+  downloadBtn: document.getElementById("download-pdf"),
 };
 
 function storageGet(key) {
@@ -312,3 +313,9 @@ async function loadReport() {
 }
 
 loadReport();
+
+if (dom.downloadBtn) {
+  dom.downloadBtn.addEventListener("click", () => {
+    window.print();
+  });
+}
