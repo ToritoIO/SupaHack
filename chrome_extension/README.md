@@ -2,6 +2,10 @@
 
 SupaExplorer helps security reviewers, red-teamers, and Supabase builders discover how an application talks to Supabase without leaving the page they are testing.
 
+## Demo Video
+
+[![Demo Video](https://img.youtube.com/vi/qMo5tozDHxE/0.jpg)](https://www.youtube.com/watch?v=qMo5tozDHxE)
+
 ## Core Capabilities
 - Detects Supabase traffic by instrumenting `fetch`, `XMLHttpRequest`, and `chrome.webRequest`, then caches the live project ID, schema, and API keys it sees.
 - Ships a Chrome side panel for browsing tables, checking row counts, and spotting RLS denial responses with at-a-glance status.
