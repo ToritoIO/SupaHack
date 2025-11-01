@@ -7,6 +7,8 @@ SupaExplorer helps security reviewers, red-teamers, and Supabase builders discov
 <a href="https://www.youtube.com/watch?v=qMo5tozDHxE">
   <img src="https://img.youtube.com/vi/qMo5tozDHxE/maxresdefault.jpg" alt="SupaExplorer Demo Video" width="100%">
 </a>
+Click on the image to watch the video on Youtube.
+
 
 ## Core Capabilities
 - Detects Supabase traffic by instrumenting `fetch`, `XMLHttpRequest`, and `chrome.webRequest`, then caches the live project ID, schema, and API keys it sees.
